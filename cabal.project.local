@@ -1,0 +1,5 @@
+profiling: False
+documentation: False
+
+package *
+  documentation: False

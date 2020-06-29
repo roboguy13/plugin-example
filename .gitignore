@@ -1,0 +1,17 @@
+*.hi
+*.o
+.*.swp
+.*.swo
+.*.swn
+*.log
+*.cut
+*.aux
+*.out
+*.pdf
+*.bbl
+*.blg
+dist
+dist-newstyle
+a.out.dSYM
+a.out
+*~
