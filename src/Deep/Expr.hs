@@ -18,7 +18,9 @@ data ProdMatch a b = MkProdMatch { runProdMatch :: a -> b }
 data Expr t where
   Lit :: Double -> Expr Double
 
-  PairExp :: forall a b. Expr a -> Expr b -> Expr (a, b)
+  -- The constraints on this constructor seem to be necessary to avoid
+  -- an out-of-scope type variable error in the plugin transformation:
+  PairExp :: forall a b. (ExprRep a, ExprRep b) => Expr a -> Expr b -> Expr (a, b)
 
   CaseExp :: forall t x r. (ExprRep t, ExprRepTy x ~ x, ExprRepTy t ~ x) => Expr t -> Expr (ProdMatch x r) -> Expr r
 
@@ -64,21 +66,21 @@ eval (NullaryMatch x) = MkProdMatch (const (eval x))
 
 class Typeable a => ExprRep a where
   type ExprRepTy a
-  type ExprRepTy t = ExprRepTy (Rep t Void)
+  type ExprRepTy a = ExprRepTy (Rep a Void)
 
   rep :: a -> Expr a
   construct :: a -> Expr (ExprRepTy a)
   unrepTy :: ExprRepTy a -> a
   repTy :: a -> ExprRepTy a
 
-  default rep :: (Generic a, ExprRep (Rep a Void), ExprRep (ExprRepTy a)) => a -> Expr a
+  default rep :: (ExprRep (ExprRepTy a)) => a -> Expr a
   rep x = ConstructRep (construct x)
   {-# INLINABLE rep #-}
 
 
   default unrepTy :: (Generic a, ExprRepTy a ~ ExprRepTy (Rep a Void), ExprRep (Rep a Void))
     => ExprRepTy a -> a
-  unrepTy = (to :: Rep a Void -> a) . unrepTy
+  unrepTy x = (to :: Rep a Void -> a) (unrepTy x)
   {-# INLINABLE unrepTy #-}
 
 
@@ -89,7 +91,7 @@ class Typeable a => ExprRep a where
 
   default repTy :: (Generic a, ExprRepTy a ~ ExprRepTy (Rep a Void), ExprRep (Rep a Void))
     => a -> ExprRepTy a
-  repTy = repTy . (from :: a -> Rep a Void)
+  repTy x = repTy ((from :: a -> Rep a Void) x)
   {-# INLINABLE repTy #-}
 
 
@@ -103,7 +105,7 @@ instance ExprRep Double where
 instance (ExprRep a, ExprRep b) => ExprRep (a, b) where
   type ExprRepTy (a, b) = (a, b)
   construct (a, b) = PairExp (rep a) (rep b)
-  rep = construct
+  rep (a, b) = PairExp (rep a) (rep b)
   unrepTy = id
   repTy = id
 

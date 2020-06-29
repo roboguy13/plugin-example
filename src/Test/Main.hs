@@ -11,6 +11,8 @@ import           Deep.Delineate
 
 import           Data.Complex
 
+default (Double)
+
 instance ExprRep a => ExprRep (Complex a)
 
 testTriple :: Double -> (Complex Double, Complex Double, Complex Double)

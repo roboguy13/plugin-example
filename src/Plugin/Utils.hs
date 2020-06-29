@@ -747,7 +747,7 @@ isConstructor v
 
 getConstructorTyCon_maybe :: Var -> Maybe TyCon
 getConstructorTyCon_maybe v
-  | isId v = trace ("idDetails: " ++ showSDocUnsafe (ppr (idDetails v))) $
+  | isId v = --trace ("idDetails: " ++ showSDocUnsafe (ppr (idDetails v))) $
     case idDetails v of
       DataConWorkId dc -> Just $ dataConTyCon dc
       DataConWrapId dc -> Just $ dataConTyCon dc
@@ -798,19 +798,14 @@ getConstructorApp_maybe e =
 -- | Beta-reduce as many lambda-binders as possible.
 betaReduceAll :: CoreExpr -> [CoreExpr] -> (CoreExpr, [CoreExpr])
 betaReduceAll e0@(Lam v body) (a:as) =
-  -- trace ("betaReduceAll: v = " ++ showSDocUnsafe (ppr v)) $
-  -- whenId (isTyCoVar v) (trace ("betaReduceAll: v = " ++ showSDocUnsafe (ppr v) ++ " ===> " ++ showSDocUnsafe (ppr a))) $
-  -- whenId (isTyCoVar v) (trace ("------------------------------------")) $
   let (r, as') = betaReduceAll (substCoreExpr v a body) as
   in
-    -- whenId (isTyCoVar v) (trace ("<------------ " ++ showSDocUnsafe (ppr e0))) $
-    -- whenId (isTyCoVar v) (trace ("^-----------> " ++ showSDocUnsafe (ppr r))) $
+    -- trace ("betaReduceAll: " ++ showSDocUnsafe (ppr (a, v))) $
     (r, as')
 
 -- Coercion handling is based on the hypothetical operational semantics
 -- for GHC's implementation of System FC given here https://github.com/ghc/ghc/tree/master/docs/core-spec
 betaReduceAll e@(Cast (Lam v body) gamma) (a:as) =
-  trace ("betaReduceAll: Cast: v = " ++ showSDocUnsafe (ppr v)) $
   case a of
     Coercion gamma' -> -- S_CPush
       let rho = coercionRole gamma'
@@ -821,6 +816,7 @@ betaReduceAll e@(Cast (Lam v body) gamma) (a:as) =
       betaReduceAll (Lam v (Cast body gamma2)) (Coercion (mkTransCo gamma0 (mkTransCo gamma gamma1)) : as)
 
     Type tau -> -- S_TPush
+      -- trace ("S_TPush: " ++ showSDocUnsafe (ppr (tau, v))) $
       let gamma' = mkSymCo (mkNthCo Nominal 0 gamma)
           tau' = Cast a gamma'
           (result, remainingArgs) = betaReduceAll (Lam v body) (tau':as)
@@ -835,11 +831,6 @@ betaReduceAll e@(Cast (Lam v body) gamma) (a:as) =
       in
       betaReduceAll (Lam v (Cast body gamma1)) ((Cast a gamma0) : as)
 betaReduceAll e            as     = (e,as)
-
--- getLamInCasts :: CoreExpr -> Maybe (Id, CoreExpr, Coercion)
--- getLamInCasts (Cast e co) =
---   case getLamInCasts e of
---     Just (v, body, co') -> Just (v, body, 
 
 betaReduce :: CoreExpr -> CoreExpr
 betaReduce x =
@@ -1250,9 +1241,35 @@ transformMaybe f e0 =
 
 replaceVarId_maybe :: Id -> CoreExpr -> CoreExpr -> Maybe CoreExpr
 replaceVarId_maybe i new (Var v)
-  | v == i = trace ("replacing " ++ showSDocUnsafe (ppr v) ++ " ====> {" ++ showSDocUnsafe (ppr new) ++ "}") $ Just new
+  | v == i = Just new
 replaceVarId_maybe _ _ _ = Nothing
 
+onCastExpr_maybe :: (CoreExpr -> CoreExpr) -> CoreExpr -> Maybe CoreExpr
+onCastExpr_maybe t (Cast e co) = Just (Cast (t e) co)
+onCastExpr_maybe _ _ = Nothing
+
+onCastExpr :: (CoreExpr -> CoreExpr) -> CoreExpr -> CoreExpr
+onCastExpr t = maybeApply (onCastExpr_maybe t)
+
+-- | Transform the function position of a collection of Apps:
+-- f :@ x0 :@ x1 :@ ... :@ xN    ==>    (t f) :@ x0 :@ x1 :@ ... :@ xN
+onAppFun_maybe :: (CoreExpr -> Maybe CoreExpr) -> CoreExpr -> Maybe CoreExpr
+onAppFun_maybe t e@(App _ _) =
+  let (f, args) = collectArgs e
+  in mkApps <$> t f <*> pure args
+onAppFun_maybe t e = Nothing
+
+onAppFunId_maybe :: (Id -> Maybe CoreExpr) -> CoreExpr -> Maybe CoreExpr
+onAppFunId_maybe t e = onAppFun_maybe go e
+  where
+    go (Var f) = t f
+    go _ = Nothing
+
+onAppFun :: (CoreExpr -> CoreExpr) -> CoreExpr -> CoreExpr
+onAppFun = maybeApply . onAppFun_maybe . (Just .)
+
+onAppFunId :: (Id -> CoreExpr) -> CoreExpr -> CoreExpr
+onAppFunId = maybeApply . onAppFunId_maybe . (Just .)
 
 -- | ((case s wild of { P ... -> f; ... }) v)   ==>   case s wild of { P ... -> f v; ... }
 caseFloatApp_maybe :: CoreExpr -> Maybe CoreExpr
@@ -1309,8 +1326,6 @@ combineCasts_maybe dflags origE@(Cast (Cast e coA) coB) =
     else
      let newCo = mkTransCo coA coB
      in
-     trace ("combineCasts: " ++ showPpr dflags (coercionKind newCo)) $
-     trace ("===========> {" ++ showPpr dflags e ++ "}") $
      Just $ Cast e newCo
 combineCasts_maybe _ _ = Nothing
 
@@ -1319,6 +1334,14 @@ combineCasts dflags e =
   case combineCasts_maybe dflags e of
     Just e' -> e'
     _ -> e
+
+onAppArg_maybe :: (CoreExpr -> CoreExpr) -> CoreExpr -> Maybe CoreExpr
+onAppArg_maybe t (App f x) = Just $ App f (t x)
+onAppArg_maybe _ _ = Nothing
+
+onAppArg :: (CoreExpr -> CoreExpr) -> CoreExpr -> CoreExpr
+onAppArg t = maybeApply (onAppArg_maybe t)
+
 
 -- Modified from 'Inst':
 
