@@ -285,6 +285,12 @@ encodingTransform guts currName e = do
       -- traceM $ "case result = " ++ showPpr dflags r
       return r
 
+    go isUnrep exprTyCon expr@(Var f :@ x)
+      | "D#" <- occNameString (occName f) = do
+
+        litId <- findIdTH guts 'DE.Lit
+        return (Var litId :@ expr)
+
     go isUnrep exprTyCon expr@(Var f :@ Type ty :@ x)
       | isUnrep f =
           return x
