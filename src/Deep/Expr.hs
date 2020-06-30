@@ -38,8 +38,8 @@ data Expr t where
 
   Add :: Expr Double -> Expr Double -> Expr Double
 
-  Lam :: (ExprRep a) => (Expr a -> Expr b) -> Expr (a -> b)
-  App :: Expr (a -> b) -> Expr a -> Expr b
+  Lam :: forall a b. (ExprRep a) => (Expr a -> Expr b) -> Expr (a -> b)
+  App :: forall a b. Expr (a -> b) -> Expr a -> Expr b
 
   ConstructRep ::
     forall a. (Typeable a, ExprRep a) => Expr (ExprRepTy a) -> Expr a
